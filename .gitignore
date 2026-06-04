@@ -1,0 +1,20 @@
+# Secrets / local config
+.env
+.env.local
+
+# Data: Linear exports and generated Nave-import CSVs (incl. sync.py temp files)
+*.csv
+
+# Vendor API reference docs
+*.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
