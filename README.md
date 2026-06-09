@@ -5,10 +5,11 @@ dashboard. Pulls every issue for a team from the Linear GraphQL API — with the
 **real per-state entry timestamps** from each issue's history — converts them to
 Nave's CSV import shape, and uploads the result to a Nave dashboard.
 
-The board is **forward-only**: each card is placed at the furthest workflow stage
-it has reached, so a card that was sent back (e.g. Reviewed → In Progress) stays at
-its high-water mark and your review/rework bottleneck stays visible in the aging
-chart and CFD.
+The board tracks each card's **current** Linear state: a card is placed at the
+stage it is in right now, and a stage it once touched but was sent back from
+(e.g. a brief In Review before bouncing to Todo) is dropped. Terminal cards
+(Canceled / Duplicate) keep the full pipeline journey they completed before
+exiting.
 
 ## Requirements
 
@@ -68,7 +69,8 @@ it entered every workflow stage. The output CSV has one column per stage
 (`Triage, Backlog, Todo, In Progress, In Review, Reviewed, Staged, Done`, plus
 terminal `Canceled` / `Duplicate`). Dates are carried forward up to the card's
 current stage so Nave sees a monotonic, non-decreasing progression and places the
-card in the right column.
+card in the right column. Stages beyond the current state — visited once but
+reverted from — are not carried, so the card lands where Linear says it is now.
 
 To adapt this to a different team's workflow, edit `PIPELINE` and
 `STATE_TO_COLUMN` near the top of `backfill.py` to match your Linear statuses.

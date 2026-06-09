@@ -202,7 +202,13 @@ def first_entry_per_state(issue):
 
 def stage_dates(issue):
     """Map real state-entry timestamps onto the output columns with cumulative
-    carry-forward so Nave sees monotonic, non-decreasing stage dates."""
+    carry-forward so Nave sees monotonic, non-decreasing stage dates.
+
+    Placement follows the issue's CURRENT Linear state: the pipeline is filled
+    only up to the column the issue is in right now, and any further stage it
+    once visited but was sent back from (e.g. a brief In Review touch before
+    bouncing to Todo) is dropped. Terminal cards (Canceled/Duplicate) keep the
+    full pipeline journey they actually completed before exiting."""
     entered = first_entry_per_state(issue)
 
     # earliest entry date per OUTPUT column (several states may map to one column)
@@ -214,9 +220,17 @@ def stage_dates(issue):
         if not col_date[col] or iso < col_date[col]:
             col_date[col] = iso
 
-    # how far down the pipeline did it actually get?
-    reached = [i for i, c in enumerate(PIPELINE) if col_date[c]]
-    fill_to = max(reached) if reached else -1
+    # Fill the pipeline up to the issue's CURRENT state. If the current state is
+    # a pipeline column, that column's index is the cutoff -- stages beyond it
+    # that were only briefly visited (then reverted) are not carried. If the
+    # current state is terminal (Canceled/Duplicate, not in PIPELINE), keep the
+    # furthest pipeline stage actually reached so the card's journey survives.
+    current_col = STATE_TO_COLUMN.get(issue["state"]["name"])
+    if current_col in PIPELINE:
+        fill_to = PIPELINE.index(current_col)
+    else:
+        reached = [i for i, c in enumerate(PIPELINE) if col_date[c]]
+        fill_to = max(reached) if reached else -1
 
     out = {c: "" for c in STATUS_COLS}
     last = ""
