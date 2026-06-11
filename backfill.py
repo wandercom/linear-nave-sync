@@ -207,8 +207,12 @@ def first_entry_per_state(issue):
 
 
 def stage_dates(issue):
-    """Map real state-entry timestamps onto the output columns with cumulative
-    carry-forward so Nave sees monotonic, non-decreasing stage dates.
+    """Map real state-entry timestamps onto the output columns so Nave sees
+    monotonic, non-decreasing stage dates.
+
+    A stage the card genuinely skipped -- no recorded entry, but it sits between
+    two stages the card did enter -- inherits the NEXT real stage's date (the
+    card passed this point on its way there), not the previous one.
 
     Placement follows the issue's CURRENT Linear state: the pipeline is filled
     only up to the column the issue is in right now, and any further stage it
@@ -239,12 +243,24 @@ def stage_dates(issue):
         fill_to = max(reached) if reached else -1
 
     out = {c: "" for c in STATUS_COLS}
-    last = ""
-    for i in range(fill_to + 1):
-        c = PIPELINE[i]
-        if col_date[c]:
-            last = col_date[c]
-        out[c] = last  # carry forward through genuinely-skipped intermediate stages
+    real = [i for i in range(fill_to + 1) if col_date[PIPELINE[i]]]
+    if real:
+        for i in range(real[0], real[-1] + 1):
+            c = PIPELINE[i]
+            if col_date[c]:
+                out[c] = col_date[c]
+            else:
+                # Genuinely-skipped intermediate stage (lies between two stages
+                # the card did enter): inherit the NEXT real stage's date, not the
+                # previous one -- the card passed this point on its way to that
+                # stage, so that's when it moved through here. Stays monotonic
+                # since the next date is >= the surrounding gap. Leading stages
+                # before real[0] are left empty: the card never reached them.
+                out[c] = next(
+                    col_date[PIPELINE[j]]
+                    for j in range(i + 1, real[-1] + 1)
+                    if col_date[PIPELINE[j]]
+                )
 
     for t in TERMINAL:
         if col_date[t]:

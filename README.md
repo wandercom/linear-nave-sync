@@ -66,11 +66,13 @@ python3 upload.py   snapshot.csv      # push that CSV to Nave + poll the job
 
 `backfill.py` reads each issue's full state-transition history and records the date
 it entered every workflow stage. The output CSV has one column per stage, plus
-terminal columns for any `canceled`/`duplicate`-type states. Dates are carried
-forward up to the card's current stage so Nave sees a monotonic, non-decreasing
-progression and places the card in the right column. Stages beyond the current
-state — visited once but reverted from — are not carried, so the card lands where
-Linear says it is now.
+terminal columns for any `canceled`/`duplicate`-type states. A stage the card
+genuinely skipped (no recorded entry, but it sits between two stages the card did
+enter) inherits the **next** real stage's date — the card passed that point on its
+way there — so Nave sees a monotonic, non-decreasing progression and places the
+card in the right column. Leading stages the card never reached stay empty, and
+stages beyond the current state — visited once but reverted from — are not filled,
+so the card lands where Linear says it is now.
 
 **The columns are derived per team automatically.** On each run `backfill.py`
 fetches the team's workflow states from Linear and builds the pipeline from them,
