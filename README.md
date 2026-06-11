@@ -65,15 +65,21 @@ python3 upload.py   snapshot.csv      # push that CSV to Nave + poll the job
 ## How the stage mapping works
 
 `backfill.py` reads each issue's full state-transition history and records the date
-it entered every workflow stage. The output CSV has one column per stage
-(`Triage, Backlog, Todo, In Progress, In Review, Reviewed, Staged, Done`, plus
-terminal `Canceled` / `Duplicate`). Dates are carried forward up to the card's
-current stage so Nave sees a monotonic, non-decreasing progression and places the
-card in the right column. Stages beyond the current state — visited once but
-reverted from — are not carried, so the card lands where Linear says it is now.
+it entered every workflow stage. The output CSV has one column per stage, plus
+terminal columns for any `canceled`/`duplicate`-type states. Dates are carried
+forward up to the card's current stage so Nave sees a monotonic, non-decreasing
+progression and places the card in the right column. Stages beyond the current
+state — visited once but reverted from — are not carried, so the card lands where
+Linear says it is now.
 
-To adapt this to a different team's workflow, edit `PIPELINE` and
-`STATE_TO_COLUMN` near the top of `backfill.py` to match your Linear statuses.
+**The columns are derived per team automatically.** On each run `backfill.py`
+fetches the team's workflow states from Linear and builds the pipeline from them,
+mirroring the board's own layout: states are ordered by type
+(`triage → backlog → unstarted → started → completed`) and then by `position`
+within a type, with `canceled`/`duplicate` states becoming terminal columns. So
+any team works with no code edits — point `LINEAR_TEAM_KEY` at it and run. For
+example, `WOS` yields `… In Progress, In Review, Reviewed, Staged, Done` while
+`SNC` yields `… In Progress, For Review, In Review, Reviewed, Done`.
 
 ## Notes
 

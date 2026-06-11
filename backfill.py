@@ -28,28 +28,23 @@ API_URL = "https://api.linear.app/graphql"
 # KEY (the issue-id prefix, e.g. "WOS"), not the display name.
 TEAM_KEY = os.environ.get("LINEAR_TEAM_KEY")
 
-# ---- Output shape (matches the existing formatted CSVs exactly) ----
-PIPELINE = ["Triage", "Backlog", "Todo", "In Progress", "In Review", "Reviewed", "Staged", "Done"]
-TERMINAL = ["Canceled", "Duplicate"]
-STATUS_COLS = PIPELINE + TERMINAL
-OUT_HEADER = ["Id", "Name"] + STATUS_COLS + [
-    "Blocked Date Range", "Due Date", "Task URL", "Labels", "Cycle", "Issue Type", "Resolution",
-]
+# ---- Output shape (derived per team at runtime) ----
+# PIPELINE / TERMINAL / STATUS_COLS / OUT_HEADER / STATE_TO_COLUMN are filled in
+# by configure_for_team() from the team's live Linear workflow, so the script
+# works for any team with no per-team code edits. They start empty and MUST be
+# configured before any issue is processed (main() does this first).
+PIPELINE = []
+TERMINAL = []
+STATUS_COLS = []
+OUT_HEADER = []
+STATE_TO_COLUMN = {}
 
-# Map each real WOS workflow state -> the output column it feeds. Each pipeline
-# state has its own column (including "Reviewed", between In Review and Staged).
-STATE_TO_COLUMN = {
-    "Triage": "Triage",
-    "Backlog": "Backlog",
-    "Todo": "Todo",
-    "In Progress": "In Progress",
-    "In Review": "In Review",
-    "Reviewed": "Reviewed",
-    "Staged": "Staged",
-    "Done": "Done",
-    "Canceled": "Canceled",
-    "Duplicate": "Duplicate",
-}
+# Linear renders board columns by state TYPE in this lifecycle order, then by
+# `position` within each type. We mirror that to order the pipeline columns.
+# Canceled/Duplicate types are terminal: they get their own off-pipeline columns
+# (a card placed there keeps the journey it completed before exiting).
+PIPELINE_TYPE_ORDER = ["triage", "backlog", "unstarted", "started", "completed"]
+TERMINAL_TYPES = {"canceled", "duplicate"}
 
 ISSUES_QUERY = """
 query Issues($after: String, $teamKey: String!) {
@@ -92,6 +87,17 @@ query IssueHistory($id: String!, $after: String) {
         fromState { name }
         toState { name }
       }
+    }
+  }
+}
+"""
+
+
+STATES_QUERY = """
+query TeamStates($key: String!) {
+  team(id: $key) {
+    states(first: 100) {
+      nodes { name type position }
     }
   }
 }
@@ -256,6 +262,35 @@ def issue_type(issue):
     return "Task"
 
 
+def configure_for_team(team_key):
+    """Derive the output columns from the team's live Linear workflow states.
+
+    Mirrors the board's own layout: states are ordered by type
+    (PIPELINE_TYPE_ORDER) and then by `position` within a type. Canceled/Duplicate
+    types become terminal columns; everything else is a pipeline column. The
+    column name IS the state name (identity STATE_TO_COLUMN), so no state can be
+    silently dropped. Rebinds the module globals the rest of the script reads."""
+    global PIPELINE, TERMINAL, STATUS_COLS, OUT_HEADER, STATE_TO_COLUMN
+
+    nodes = gql(STATES_QUERY, {"key": team_key})["team"]["states"]["nodes"]
+    if not nodes:
+        sys.exit(f"ERROR: no workflow states found for team {team_key!r}.")
+
+    def type_rank(t):
+        return PIPELINE_TYPE_ORDER.index(t) if t in PIPELINE_TYPE_ORDER else len(PIPELINE_TYPE_ORDER)
+
+    ordered = sorted(nodes, key=lambda s: (type_rank(s["type"]), s["position"]))
+    PIPELINE = [s["name"] for s in ordered if s["type"] not in TERMINAL_TYPES]
+    TERMINAL = [s["name"] for s in ordered if s["type"] in TERMINAL_TYPES]
+    STATUS_COLS = PIPELINE + TERMINAL
+    OUT_HEADER = ["Id", "Name"] + STATUS_COLS + [
+        "Blocked Date Range", "Due Date", "Task URL", "Labels", "Cycle", "Issue Type", "Resolution",
+    ]
+    STATE_TO_COLUMN = {name: name for name in STATUS_COLS}
+    print(f"  pipeline ({team_key}): {' -> '.join(PIPELINE)}"
+          + (f"  | terminal: {', '.join(TERMINAL)}" if TERMINAL else ""), file=sys.stderr)
+
+
 def fetch_all_issues():
     after = None
     while True:
@@ -278,7 +313,8 @@ def fetch_all_issues():
 def main():
     if not TEAM_KEY:
         sys.exit("ERROR: LINEAR_TEAM_KEY is not set.")
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "WanderOS issues (history backfill).csv"
+    out_path = sys.argv[1] if len(sys.argv) > 1 else f"{TEAM_KEY} issues (history backfill).csv"
+    configure_for_team(TEAM_KEY)  # derive columns from the team's workflow first
     n = 0
     with open(out_path, "w", newline="") as fout:
         writer = csv.writer(fout)
